@@ -11,7 +11,7 @@ func AddTodo(todo repository.Todo) int64 {
 
 	todoId, err := repository.AddTodo(todo)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		return -1
 	}
 
@@ -21,7 +21,7 @@ func AddTodo(todo repository.Todo) int64 {
 func DeleteTodo(todoId int64) int64 {
 	rowsAffected, err := repository.DeleteTodo(todoId)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		return -1
 	}
 
@@ -31,17 +31,26 @@ func DeleteTodo(todoId int64) int64 {
 func UpdateTodo(todo repository.Todo) int64 {
 	rowsAffected, err := repository.UpdateTodo(todo)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		return -1
 	}
 
 	return rowsAffected
 }
 
+func SelectTodoByTodoId(todoId int64) repository.Todo {
+	todo, err := repository.SelectTodoByTodoId(todoId)
+	if err != nil {
+		log.Println(err)
+	}
+
+	return todo
+}
+
 func SelectTodosByCategory(category string) []repository.Todo {
 	todos, err := repository.SelectTodosByCategory(category)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		return nil
 	}
 
@@ -49,9 +58,9 @@ func SelectTodosByCategory(category string) []repository.Todo {
 }
 
 func SelectTodosByIsComplete(isComplete string) []repository.Todo {
-	todos, err := repository.SelectTodosByCategory(isComplete)
+	todos, err := repository.SelectTodosByIsComplete(isComplete)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		return nil
 	}
 
@@ -59,9 +68,9 @@ func SelectTodosByIsComplete(isComplete string) []repository.Todo {
 }
 
 func SelectTodosByContent(content string) []repository.Todo {
-	todos, err := repository.SelectTodosByCategory(content)
+	todos, err := repository.SelectTodosByContent(content)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 		return nil
 	}
 

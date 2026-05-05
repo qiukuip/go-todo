@@ -21,7 +21,7 @@ type Todo struct {
 
 const (
 	dbUser     = "root"
-	dbPassword = "mysql.root"
+	dbPassword = "pass.mysql"
 	dbName     = "my_demo"
 	dbAddr     = "minipc:3306"
 )
@@ -30,6 +30,7 @@ const (
 	insertTodoSQL              = "insert into todo (content, category, is_complete, deadline) values (?, ?, ?, ?)"
 	updateTodoSQL              = "update todo set content = ?, category = ?, is_complete = ?, deadline = ? where todo_id = ?"
 	deleteTodoSQL              = "delete from todo where todo_id = ?"
+	selectTodoByTodoIdSQL      = "select * from todo where todo_id = ?"
 	selectTodosByCategorySQL   = "select * from todo where category = ? order by todo_id"
 	selectTodosByContentSQL    = "select * from todo where content like concat('%', ?, '%') order by todo_id"
 	selectTodosByIsCompleteSQL = "select * from todo where is_complete = ? order by todo_id"
@@ -53,6 +54,8 @@ func getConnection() {
 	cfg.DBName = dbName
 	cfg.Addr = dbAddr
 	cfg.Net = "tcp"
+	cfg.ParseTime = true
+	cfg.Loc = time.Now().Local().Location()
 
 	var err error
 	db, err = sql.Open("mysql", cfg.FormatDSN())
@@ -115,6 +118,21 @@ func UpdateTodo(todo Todo) (int64, error) {
 	}
 
 	return rowsAffected, nil
+}
+
+func SelectTodoByTodoId(todoId int64) (Todo, error) {
+	getConnection()
+
+	var todo Todo
+	row := db.QueryRow(selectTodoByTodoIdSQL, todoId)
+	if err := row.Scan(&todo.TodoId, &todo.Content, &todo.Category, &todo.IsComplete, &todo.Deadline, &todo.CreateAt, &todo.UpdateAt); err != nil {
+		if err == sql.ErrNoRows {
+			return todo, fmt.Errorf("selectTodo %d: 没有相关数据", todoId)
+		}
+		return todo, fmt.Errorf("selectTodo %d: %+v", todoId, err)
+	}
+
+	return todo, nil
 }
 
 func SelectTodosByCategory(category string) ([]Todo, error) {
