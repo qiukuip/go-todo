@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -24,7 +25,15 @@ func addTodo(c *gin.Context) {
 		return
 	}
 
-	todoId := service.AddTodo(todo)
+	todoId, err := service.AddTodo(todo)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, service.ErrInvalidInput) {
+			status = http.StatusBadRequest
+		}
+		c.IndentedJSON(status, common.Fail[any](err.Error()))
+		return
+	}
 	c.IndentedJSON(http.StatusOK, common.Success(todoId))
 }
 
@@ -37,8 +46,51 @@ func deleteTodo(c *gin.Context) {
 		return
 	}
 
-	affectedRows := service.DeleteTodo(todoId)
+	affectedRows, err := service.DeleteTodo(todoId)
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, common.Fail[any](err.Error()))
+		return
+	}
 	c.IndentedJSON(http.StatusOK, common.Success[any](affectedRows))
+}
+
+func updateTodo(c *gin.Context) {
+	todoIdParam := c.Param("todoId")
+	todoId, err := strconv.ParseInt(todoIdParam, 10, 64)
+	if err != nil {
+		log.Println(err)
+		c.IndentedJSON(http.StatusBadRequest, common.Fail[any]("参数错误"))
+		return
+	}
+
+	var todo repository.Todo
+	if err := c.BindJSON(&todo); err != nil {
+		log.Println(err)
+		c.IndentedJSON(http.StatusBadRequest, common.Fail[any]("请求失败"))
+		return
+	}
+
+	todo.TodoId = int(todoId)
+
+	rowsAffected, err := service.UpdateTodo(todo)
+	if err != nil {
+		log.Println(err)
+		c.IndentedJSON(http.StatusBadRequest, common.Fail[any]("请求失败"))
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, common.Success(rowsAffected))
+}
+
+func selectTodoCategory(c *gin.Context) {
+	categories, err := service.SelectTodoCategory()
+	if err != nil {
+		log.Println(err)
+		c.IndentedJSON(http.StatusInternalServerError, common.Fail[any]("请求失败"))
+		return
+	}
+
+	c.IndentedJSON(http.StatusOK, common.Success(categories))
 }
 
 func selectTodoByTodoId(c *gin.Context) {
@@ -50,31 +102,38 @@ func selectTodoByTodoId(c *gin.Context) {
 		return
 	}
 
-	todo := service.SelectTodoByTodoId(todoId)
+	todo, err := service.SelectTodoByTodoId(todoId)
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, common.Fail[any](err.Error()))
+		return
+	}
 	c.IndentedJSON(http.StatusOK, common.Success(todo))
 }
 
-func selectTodosByCategoryOrContentOrIsComplete(c *gin.Context) {
+func selectTodos(c *gin.Context) {
 	category := c.Query("category")
 	content := c.Query("content")
 	isComplete := c.Query("isComplete")
-	log.Printf("api#selectTodosByCategoryOrContentOrIsComplete, category: %s, content: %s, isComplete: %s\n", category, content, isComplete)
+
 	if category == "" && content == "" && isComplete == "" {
-		log.Println("api#selectTodosByCategoryOrContentOrIsComplete: 请求参数为空")
 		c.IndentedJSON(http.StatusBadRequest, common.Fail[any]("请求参数不能为空"))
 		return
 	}
 
 	var todos []repository.Todo
+	var err error
+
 	if category != "" {
-		log.Println("api#selectTodosByCategoryOrContentOrIsComplete: 根据 category 查询")
-		todos = service.SelectTodosByCategory(category)
+		todos, err = service.SelectTodosByCategory(category)
 	} else if content != "" {
-		log.Println("api#selectTodosByCategoryOrContentOrIsComplete: 根据 content 查询")
-		todos = service.SelectTodosByContent(content)
+		todos, err = service.SelectTodosByContent(content)
 	} else if isComplete != "" {
-		log.Println("api#selectTodosByCategoryOrContentOrIsComplete: 根据 isComplete 查询")
-		todos = service.SelectTodosByIsComplete(isComplete)
+		todos, err = service.SelectTodosByIsComplete(isComplete)
+	}
+
+	if err != nil {
+		c.IndentedJSON(http.StatusInternalServerError, common.Fail[any](err.Error()))
+		return
 	}
 
 	c.IndentedJSON(http.StatusOK, common.Success(todos))
@@ -83,11 +142,16 @@ func selectTodosByCategoryOrContentOrIsComplete(c *gin.Context) {
 func main() {
 	engine := gin.Default()
 
+	// todo api
 	engine.GET("/ping", pong)
 	engine.POST("/todos", addTodo)
-	engine.DELETE("/todos", deleteTodo)
+	engine.DELETE("/todos/:todoId", deleteTodo)
+	engine.PUT("/todos/:todoId", updateTodo)
 	engine.GET("/todos/:todoId", selectTodoByTodoId)
-	engine.GET("/todos", selectTodosByCategoryOrContentOrIsComplete)
+	engine.GET("/todos", selectTodos)
+
+	// category api
+	engine.GET("/todos/categories", selectTodoCategory)
 
 	addr := "127.0.0.1:8000"
 	engine.Run(addr)

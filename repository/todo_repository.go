@@ -19,6 +19,11 @@ type Todo struct {
 	UpdateAt   time.Time `json:"updateAt"`
 }
 
+type QueryCondition struct {
+	Field string
+	Value any
+}
+
 const (
 	dbUser     = "root"
 	dbPassword = "pass.mysql"
@@ -27,26 +32,21 @@ const (
 )
 
 const (
-	insertTodoSQL              = "insert into todo (content, category, is_complete, deadline) values (?, ?, ?, ?)"
-	updateTodoSQL              = "update todo set content = ?, category = ?, is_complete = ?, deadline = ? where todo_id = ?"
-	deleteTodoSQL              = "delete from todo where todo_id = ?"
-	selectTodoByTodoIdSQL      = "select * from todo where todo_id = ?"
-	selectTodosByCategorySQL   = "select * from todo where category = ? order by todo_id"
-	selectTodosByContentSQL    = "select * from todo where content like concat('%', ?, '%') order by todo_id"
-	selectTodosByIsCompleteSQL = "select * from todo where is_complete = ? order by todo_id"
+	insertTodoSQL         = "insert into todo (content, category, is_complete, deadline) values (?, ?, ?, ?)"
+	updateTodoSQL         = "update todo set content = ?, category = ?, is_complete = ?, deadline = ? where todo_id = ?"
+	deleteTodoSQL         = "delete from todo where todo_id = ?"
+	selectTodoSQL         = "select todo_id, content, category, is_complete, deadline, create_at, update_at from todo"
+	selectByIdSQL         = " where todo_id = ?"
+	selectTodoCategorySQL = "select distinct category from todo order by category"
 )
 
-var (
-	db *sql.DB
-)
+var db *sql.DB
 
 func getConnection() {
 	if db != nil {
 		fmt.Println("数据库连接已存在，跳过创建连接")
 		return
 	}
-
-	log.SetPrefix("repository#getConnection: ")
 
 	cfg := mysql.NewConfig()
 	cfg.User = dbUser
@@ -72,20 +72,57 @@ func getConnection() {
 	fmt.Println("数据库连接成功！")
 }
 
+func scanTodo(rows *sql.Rows) (Todo, error) {
+	var todo Todo
+	err := rows.Scan(&todo.TodoId, &todo.Content, &todo.Category, &todo.IsComplete, &todo.Deadline, &todo.CreateAt, &todo.UpdateAt)
+	return todo, err
+}
+
+func queryTodos(conditions []QueryCondition) ([]Todo, error) {
+	getConnection()
+
+	whereClause := " where"
+	var args []any
+	for _, cond := range conditions {
+		if whereClause != " where" {
+			whereClause += " and"
+		}
+		if cond.Field == "content" {
+			whereClause += fmt.Sprintf(" %s like concat('%%', ?, '%%')", cond.Field)
+		} else {
+			whereClause += fmt.Sprintf(" %s = ?", cond.Field)
+		}
+		args = append(args, cond.Value)
+	}
+
+	sql := selectTodoSQL + whereClause + " order by todo_id"
+	rows, err := db.Query(sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var todos []Todo
+	for rows.Next() {
+		todo, err := scanTodo(rows)
+		if err != nil {
+			return nil, err
+		}
+		todos = append(todos, todo)
+	}
+
+	return todos, rows.Err()
+}
+
 func AddTodo(todo Todo) (int64, error) {
 	getConnection()
 
 	result, err := db.Exec(insertTodoSQL, todo.Content, todo.Category, todo.IsComplete, todo.Deadline)
 	if err != nil {
-		return -1, fmt.Errorf("addTodo: %+v", err)
+		return -1, err
 	}
 
-	todoId, err := result.LastInsertId()
-	if err != nil {
-		return -1, fmt.Errorf("addTodo: %+v", err)
-	}
-
-	return todoId, nil
+	return result.LastInsertId()
 }
 
 func DeleteTodo(todoId int64) (int64, error) {
@@ -93,122 +130,70 @@ func DeleteTodo(todoId int64) (int64, error) {
 
 	result, err := db.Exec(deleteTodoSQL, todoId)
 	if err != nil {
-		return -1, fmt.Errorf("deleteTodo: %+v", err)
+		return -1, err
 	}
 
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return -1, fmt.Errorf("deleteTodo: %+v", err)
-	}
-
-	return rowsAffected, nil
+	return result.RowsAffected()
 }
 
 func UpdateTodo(todo Todo) (int64, error) {
 	getConnection()
 
-	result, err := db.Exec(updateTodoSQL, todo.Content, todo.Category, todo.Deadline, todo.TodoId)
+	result, err := db.Exec(updateTodoSQL, todo.Content, todo.Category, todo.IsComplete, todo.Deadline, todo.TodoId)
 	if err != nil {
-		return -1, fmt.Errorf("updateTodo: %+v", err)
+		return -1, err
 	}
 
-	rowsAffected, err := result.RowsAffected()
+	return result.RowsAffected()
+}
+
+func SelectTodoCategory() ([]string, error) {
+	getConnection()
+
+	var categories []string
+
+	rows, err := db.Query(selectTodoCategorySQL)
 	if err != nil {
-		return -1, fmt.Errorf("updateTodo: %+v", err)
+		return categories, err
 	}
 
-	return rowsAffected, nil
+	defer rows.Close()
+
+	for rows.Next() {
+		var categoryItem string
+		if err := rows.Scan(&categoryItem); err != nil {
+			return categories, err
+		}
+		categories = append(categories, categoryItem)
+	}
+
+	return categories, nil
 }
 
 func SelectTodoByTodoId(todoId int64) (Todo, error) {
 	getConnection()
 
 	var todo Todo
-	row := db.QueryRow(selectTodoByTodoIdSQL, todoId)
-	if err := row.Scan(&todo.TodoId, &todo.Content, &todo.Category, &todo.IsComplete, &todo.Deadline, &todo.CreateAt, &todo.UpdateAt); err != nil {
+	row := db.QueryRow(selectTodoSQL+selectByIdSQL, todoId)
+	err := row.Scan(&todo.TodoId, &todo.Content, &todo.Category, &todo.IsComplete, &todo.Deadline, &todo.CreateAt, &todo.UpdateAt)
+	if err != nil {
 		if err == sql.ErrNoRows {
-			return todo, fmt.Errorf("selectTodo %d: 没有相关数据", todoId)
+			return todo, fmt.Errorf("todo %d not found", todoId)
 		}
-		return todo, fmt.Errorf("selectTodo %d: %+v", todoId, err)
+		return todo, err
 	}
 
 	return todo, nil
 }
 
 func SelectTodosByCategory(category string) ([]Todo, error) {
-	getConnection()
-
-	rows, err := db.Query(selectTodosByCategorySQL, category)
-	if err != nil {
-		return nil, fmt.Errorf("selectTodo %q: %+v", category, err)
-	}
-
-	defer rows.Close()
-
-	var todos []Todo
-	for rows.Next() {
-		var todo Todo
-		if err := rows.Scan(&todo.TodoId, &todo.Content, &todo.Category, &todo.IsComplete, &todo.Deadline, &todo.CreateAt, &todo.UpdateAt); err != nil {
-			return nil, fmt.Errorf("selectTodo %q: %+v", category, err)
-		}
-		todos = append(todos, todo)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("selectTodo %q: %+v", category, err)
-	}
-
-	return todos, nil
-}
-
-func SelectTodosByIsComplete(isComplete string) ([]Todo, error) {
-	getConnection()
-
-	rows, err := db.Query(selectTodosByIsCompleteSQL, isComplete)
-	if err != nil {
-		return nil, fmt.Errorf("selectTodo %q: %+v", isComplete, err)
-	}
-
-	defer rows.Close()
-
-	var todos []Todo
-	for rows.Next() {
-		var todo Todo
-		if err := rows.Scan(&todo.TodoId, &todo.Content, &todo.Category, &todo.IsComplete, &todo.Deadline, &todo.CreateAt, &todo.UpdateAt); err != nil {
-			return nil, fmt.Errorf("selectTodo %q: %+v", isComplete, err)
-		}
-		todos = append(todos, todo)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("selectTodo %q: %+v", isComplete, err)
-	}
-
-	return todos, nil
+	return queryTodos([]QueryCondition{{Field: "category", Value: category}})
 }
 
 func SelectTodosByContent(content string) ([]Todo, error) {
-	getConnection()
+	return queryTodos([]QueryCondition{{Field: "content", Value: content}})
+}
 
-	rows, err := db.Query(selectTodosByContentSQL, content)
-	if err != nil {
-		return nil, fmt.Errorf("selectTodo %q: %+v", content, err)
-	}
-
-	defer rows.Close()
-
-	var todos []Todo
-	for rows.Next() {
-		var todo Todo
-		if err := rows.Scan(&todo.TodoId, &todo.Content, &todo.Category, &todo.IsComplete, &todo.Deadline, &todo.CreateAt, &todo.UpdateAt); err != nil {
-			return nil, fmt.Errorf("selectTodo %q: %+v", content, err)
-		}
-		todos = append(todos, todo)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("selectTodo %q: %+v", content, err)
-	}
-
-	return todos, nil
+func SelectTodosByIsComplete(isComplete string) ([]Todo, error) {
+	return queryTodos([]QueryCondition{{Field: "is_complete", Value: isComplete}})
 }

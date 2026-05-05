@@ -1,78 +1,68 @@
 package service
 
 import (
+	"errors"
 	"log"
 
 	repository "day.happy365/gotodo.repository"
 )
 
-func AddTodo(todo repository.Todo) int64 {
+var ErrInvalidInput = errors.New("invalid input")
+var ErrTodoNotFound = errors.New("todo not found")
+
+func AddTodo(todo repository.Todo) (int64, error) {
 	log.SetPrefix("service#AddTodo: ")
+
+	if todo.Content == "" {
+		return -1, ErrInvalidInput
+	}
 
 	todoId, err := repository.AddTodo(todo)
 	if err != nil {
-		log.Println(err)
-		return -1
+		return -1, err
 	}
 
-	return todoId
+	return todoId, nil
 }
 
-func DeleteTodo(todoId int64) int64 {
+func DeleteTodo(todoId int64) (int64, error) {
 	rowsAffected, err := repository.DeleteTodo(todoId)
 	if err != nil {
-		log.Println(err)
-		return -1
+		return -1, err
 	}
 
-	return rowsAffected
+	return rowsAffected, nil
 }
 
-func UpdateTodo(todo repository.Todo) int64 {
+func UpdateTodo(todo repository.Todo) (int64, error) {
+	if todo.TodoId <= 0 {
+		return -1, ErrInvalidInput
+	}
+
 	rowsAffected, err := repository.UpdateTodo(todo)
 	if err != nil {
-		log.Println(err)
-		return -1
+		return -1, err
 	}
 
-	return rowsAffected
+	return rowsAffected, nil
 }
 
-func SelectTodoByTodoId(todoId int64) repository.Todo {
-	todo, err := repository.SelectTodoByTodoId(todoId)
-	if err != nil {
-		log.Println(err)
-	}
-
-	return todo
+func SelectTodoCategory() ([]string, error) {
+	return repository.SelectTodoCategory()
 }
 
-func SelectTodosByCategory(category string) []repository.Todo {
-	todos, err := repository.SelectTodosByCategory(category)
-	if err != nil {
-		log.Println(err)
-		return nil
-	}
-
-	return todos
+func SelectTodoByTodoId(todoId int64) (repository.Todo, error) {
+	return repository.SelectTodoByTodoId(todoId)
 }
 
-func SelectTodosByIsComplete(isComplete string) []repository.Todo {
-	todos, err := repository.SelectTodosByIsComplete(isComplete)
-	if err != nil {
-		log.Println(err)
-		return nil
-	}
-
-	return todos
+func SelectTodosByCategory(category string) ([]repository.Todo, error) {
+	return repository.SelectTodosByCategory(category)
 }
 
-func SelectTodosByContent(content string) []repository.Todo {
-	todos, err := repository.SelectTodosByContent(content)
-	if err != nil {
-		log.Println(err)
-		return nil
-	}
+func SelectTodosByIsComplete(isComplete string) ([]repository.Todo, error) {
+	return repository.SelectTodosByIsComplete(isComplete)
+}
 
-	return todos
+func SelectTodosByContent(content string) ([]repository.Todo, error) {
+	return repository.SelectTodosByContent(content)
 }

@@ -29,6 +29,19 @@ curl -X DELETE http://localhost:8000/todos/2
 
 
 
+## 修改接口
+
+```bash
+curl -X PUT --json '{
+        "content": "取快递📦",
+        "category": "日常生活",
+        "isComplete": "Y",
+        "deadline": "2026-05-05T13:35:00+08:00"
+}' http://localhost:8000/todos/2
+```
+
+
+
 ## 获取数据
 
 ### 根据 id 查询
@@ -44,4 +57,12 @@ curl http://localhost:8000/todos/1
 curl http://localhost:8000/todos?content=取快递
 
 curl http://localhost:8000/todos?category=日常生活
+```
+
+
+
+## 获取分类
+
+```bash
+curl http://localhost:8000/todos/categories
 ```
